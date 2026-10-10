@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Devir Ölçer">
+<meta name="theme-color" content="#0e1113">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Motor Devir Ölçer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Gösterge paneli: tek koyu tema (kasıtlı), ortada kadran, altında kontrol ve zaman grafiği */
+:root {
+  --bg: #0e1113;
+  --panel: #161b1e;
+  --line: #2a3237;
+  --fg: #e8ede9;
+  --muted: #8d9994;
+  --accent: #f0a43a;
+  --red: #e5534b;
+  --ok: #5bbf86;
+  --display: "Saira Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--bg); color: var(--fg); }
+body { font-family: var(--body); font-size: 15px; line-height: 1.5; padding: 16px; padding-block: 20px 40px; }
+.wrap { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font-family: var(--display); font-weight: 700; font-size: 30px; letter-spacing: .02em; margin: 0; text-transform: uppercase; }
+h2 { font-family: var(--display); font-weight: 600; font-size: 18px; letter-spacing: .06em; text-transform: uppercase; margin: 0; color: var(--muted); }
+.pill { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.pill.live { border-color: var(--red); color: var(--red); }
+.pill.file { border-color: var(--accent); color: var(--accent); }
+
+.gauge { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 12px; }
+#gauge { display: block; width: 100%; max-width: 100%; aspect-ratio: 1 / .82; }
+.readout { position: absolute; left: 0; right: 0; bottom: 9%; text-align: center; pointer-events: none; }
+#rpm { font-family: var(--display); font-weight: 600; font-size: clamp(48px, 15vw, 76px); line-height: 1; font-variant-numeric: tabular-nums; }
+.unit { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+#level { position: absolute; left: 24px; right: 24px; bottom: 12px; height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; }
+#levelbar { height: 100%; width: 0; background: var(--ok); transition: width .15s; }
+
+.controls { display: flex; flex-direction: column; gap: 14px; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.label { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); min-width: 72px; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg button { font-family: var(--display); font-size: 18px; font-weight: 600; width: 44px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.btn { font: 600 15px var(--body); display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; padding: 10px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; text-align: center; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.btn.stop { background: var(--red); border-color: var(--red); color: var(--fg); }
+.btn:focus-visible, .seg button:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+#status { min-height: 1.5em; color: var(--muted); font-size: 14px; }
+#status.err { color: var(--red); }
+
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stat { display: flex; flex-direction: column; }
+.stat b { font-family: var(--display); font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.stat span { font-size: 12px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+#chart { display: block; width: 100%; height: 220px; }
+.legend { display: flex; gap: 16px; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+
+.tips { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--fg); max-width: 65ch; }
+.tips li::marker { color: var(--accent); }
+.formula { font-family: var(--display); font-size: 18px; letter-spacing: .03em; color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { #levelbar { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Motor Devir Ölçer</h1>
+    <span id="mode" class="pill">Örnek veri</span>
+  </header>
+
+  <section class="gauge" aria-label="Devir göstergesi">
+    <canvas id="gauge" width="600" height="492"></canvas>
+    <div class="readout">
+      <div id="rpm">0</div>
+      <div class="unit">dev/dak (RPM)</div>
+    </div>
+    <div id="level" aria-hidden="true"><div id="levelbar"></div></div>
+  </section>
+
+  <section class="controls">
+    <div class="row">
+      <span class="label" id="cyl-label">Silindir</span>
+      <div class="seg" role="group" aria-labelledby="cyl-label" id="cyl"></div>
+    </div>
+    <div class="actions">
+      <label class="btn primary" for="video-in">Video çek ve ölç</label>
+      <label class="btn" for="file-in">Kayıt dosyası seç</label>
+      <button class="btn" id="live-btn" type="button">Canlı dinle</button>
+    </div>
+    <input id="video-in" type="file" accept="video/*" capture="environment">
+    <input id="file-in" type="file" accept="audio/*,video/*,.m4a,.mov,.mp4,.wav,.mp3">
+    <div id="status" role="status" aria-live="polite"></div>
+  </section>
+
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <h2>Zamana göre devir</h2>
+      <span id="source" class="unit"></span>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="s-med">–</b><span>Medyan</span></div>
+      <div class="stat"><b id="s-min">–</b><span>En düşük</span></div>
+      <div class="stat"><b id="s-max">–</b><span>En yüksek</span></div>
+    </div>
+    <canvas id="chart"></canvas>
+    <div class="legend">
+      <span><i style="background:var(--accent)"></i>Güvenilir ölçüm</span>
+      <span><i style="background:var(--red)"></i>Zayıf sinyal (özete katılmaz)</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Nasıl ölçülür</h2>
+    <div class="formula">ateşleme frekansı = RPM / 60 × silindir / 2</div>
+    <ul class="tips">
+      <li>4 zamanlı motorlar içindir. Silindir sayısını doğru seçin; yanlışsa sonuç orantılı olarak kayar.</li>
+      <li>Telefonu motor bölmesine veya egzoz çıkışına 30–50 cm mesafede tutun ve 5–10 saniye kaydedin. Kayış ve fana yaklaşmayın.</li>
+      <li>Rüzgâr, radyo, konuşma ve klima fanı ölçümü bozar. Sabit devirde ölçüm en güvenilir olanıdır.</li>
+      <li>Sonucu gösterge panelindeki takometreyle karşılaştırın. Tam iki katı ya da yarısı çıkıyorsa silindir sayısını kontrol edin.</li>
+      <li>Ölçüm aralığı 500–7000 RPM'dir. Ses, telefonun içinde işlenir ve hiçbir yere gönderilmez.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+(() => {
+  const FS = 8000, WIN = 4000, HOP = 1000, MINR = 500, MAXR = 7000, HARM = 3, GOOD = 2;
+  const GMAX = 8000, REDLINE = 6500;
+  const $ = id => document.getElementById(id);
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  let cyl = 4;
+  try { const s = +localStorage.getItem("silindir"); if ([2,3,4,5,6,8].includes(s)) cyl = s; } catch (e) {}
+  let lastSignal = null, lastSource = "", results = [], live = null;
+
+  // ---------- Sinyal işleme ----------
+  const nextPow2 = n => { let p = 1; while (p < n) p <<= 1; return p; };
+  const hannCache = {};
+  function hann(L) {
+    if (!hannCache[L]) { const w = new Float64Array(L); for (let i = 0; i < L; i++) w[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (L - 1)); hannCache[L] = w; }
+    return hannCache[L];
+  }
+  function fftMag(x, n) {
+    const re = new Float64Array(n), im = new Float64Array(n);
+    re.set(x);
+    for (let i = 1, j = 0; i < n; i++) {
+      let bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) { const t = re[i]; re[i] = re[j]; re[j] = t; }
+    }
+    for (let len = 2; len <= n; len <<= 1) {
+      const ang = -2 * Math.PI / len, half = len >> 1;
+      for (let k = 0; k < half; k++) {
+        const cr = Math.cos(ang * k), ci = Math.sin(ang * k);
+        for (let i = k; i < n; i += len) {
+          const b = i + half;
+          const xr = re[b] * cr - im[b] * ci, xi = re[b] * ci + im[b] * cr;
+          re[b] = re[i] - xr; im[b] = im[i] - xi; re[i] += xr; im[i] += xi;
+        }
+      }
+    }
+    const m = new Float64Array(n / 2 + 1);
+    for (let i = 0; i <= n / 2; i++) m[i] = Math.hypot(re[i], im[i]) + 1e-12;
+    return m;
+  }
+  // Harmonik çarpım spektrumu: aday devrin ateşleme frekansı ve katlarında birlikte enerji arar
+  function analyze(seg) {
+    const L = seg.length;
+    let mean = 0; for (let i = 0; i < L; i++) mean += seg[i]; mean /= L;
+    const w = hann(L), x = new Float64Array(L);
+    for (let i = 0; i < L; i++) x[i] = (seg[i] - mean) * w[i];
+    const n = nextPow2(L * 4), m = fftMag(x, n), df = FS / n, k0 = cyl / 120;
+    const N = Math.floor((MAXR - MINR) / 2) + 1, sc = new Float64Array(N);
+    let best = 0;
+    for (let j = 0; j < N; j++) {
+      const f0 = (MINR + 2 * j) * k0;
+      let s = 0;
+      for (let h = 1; h <= HARM; h++) {
+        const idx = h * f0 / df, i = Math.floor(idx), fr = idx - i;
+        s += Math.log(i + 1 < m.length ? m[i] * (1 - fr) + m[i + 1] * fr : 1e-12);
+      }
+      sc[j] = s;
+      if (s > sc[best]) best = j;
+    }
+    const sorted = Float64Array.from(sc).sort();
+    return { rpm: MINR + 2 * best, conf: Math.exp((sc[best] - sorted[N >> 1]) / HARM) };
+  }
+  // Kayan ortalama alçak geçiren + doğrusal ara değerleme ile 8 kHz'e indir
+  function resample(data, sr) {
+    if (Math.abs(sr - FS) < 1) return Float32Array.from(data);
+    const d = sr / FS, w = Math.max(1, 2 * Math.round(d));
+    const sm = new Float32Array(data.length);
+    let acc = 0;
+    for (let i = 0; i < data.length; i++) { acc += data[i]; if (i >= w) acc -= data[i - w]; sm[i] = acc / Math.min(i + 1, w); }
+    const outN = Math.floor((data.length - 1) / d), out = new Float32Array(outN);
+    for (let i = 0; i < outN; i++) { const t = i * d, k = Math.floor(t), f = t - k; out[i] = sm[k] * (1 - f) + sm[k + 1] * f; }
+    return out;
+  }
+  const tick = () => new Promise(r => setTimeout(r, 0));
+  async function analyzeSignal(sig) {
+    const out = [];
+    for (let s = 0; s + WIN <= sig.length; s += HOP) {
+      out.push({ t: (s + WIN / 2) / FS, ...analyze(sig.subarray(s, s + WIN)) });
+      if (out.length % 30 === 0) await tick();
+    }
+    return out;
+  }
+
+  // ---------- Kadran ----------
+  const gc = $("gauge"), g = gc.getContext("2d");
+  let shown = 0, target = 0, raf = 0;
+  function sizeCanvas(c, h) {
+    const dpr = window.devicePixelRatio || 1, wCss = c.clientWidth, hCss = h || c.clientHeight;
+    c.width = Math.round(wCss * dpr); c.height = Math.round(hCss * dpr);
+    const ctx = c.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return [wCss, hCss];
+  }
+  function drawGauge() {
+    const [W, H] = sizeCanvas(gc);
+    const cx = W / 2, cy = H * 0.56, R = Math.min(W / 2, H * 0.56) - 8;
+    const a0 = 0.75 * Math.PI, span = 1.5 * Math.PI, ang = v => a0 + span * Math.min(v, GMAX) / GMAX;
+    const fg = css("--fg"), muted = css("--muted"), line = css("--line"), red = css("--red"), acc = css("--accent");
+    g.clearRect(0, 0, W, H);
+    g.lineCap = "butt";
+    g.lineWidth = 6; g.strokeStyle = line;
+    g.beginPath(); g.arc(cx, cy, R - 3, a0, a0 + span); g.stroke();
+    g.strokeStyle = red; g.lineWidth = 10;
+    g.beginPath(); g.arc(cx, cy, R - 5, ang(REDLINE), ang(GMAX)); g.stroke();
+    for (let v = 0; v <= GMAX; v += 250) {
+      const a = ang(v), major = v % 1000 === 0, mid = v % 500 === 0;
+      const r1 = R - (major ? 26 : mid ? 18 : 12);
+      g.strokeStyle = v >= REDLINE ? red : major ? fg : muted;
+      g.lineWidth = major ? 3 : 1.5;
+      g.beginPath(); g.moveTo(cx + Math.cos(a) * (R - 2), cy + Math.sin(a) * (R - 2));
+      g.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); g.stroke();
+      if (major) {
+        g.fillStyle = v >= REDLINE ? red : fg;
+        g.font = `600 ${Math.round(R * 0.15)}px ${css("--display")}`;
+        g.textAlign = "center"; g.textBaseline = "middle";
+        g.fillText(v / 1000, cx + Math.cos(a) * (R - 48), cy + Math.sin(a) * (R - 48));
+      }
+    }
+    g.fillStyle = muted; g.font = `500 ${Math.round(R * 0.075)}px ${css("--body")}`;
+    g.fillText("× 1000 dev/dak", cx, cy - R * 0.38);
+    const a = ang(shown);
+    g.strokeStyle = acc; g.lineWidth = 4; g.lineCap = "round";
+    g.beginPath(); g.moveTo(cx - Math.cos(a) * 14, cy - Math.sin(a) * 14);
+    g.lineTo(cx + Math.cos(a) * (R - 20), cy + Math.sin(a) * (R - 20)); g.stroke();
+    g.fillStyle = acc; g.beginPath(); g.arc(cx, cy, 9, 0, 2 * Math.PI); g.fill();
+    g.fillStyle = css("--panel"); g.beginPath(); g.arc(cx, cy, 4, 0, 2 * Math.PI); g.fill();
+  }
+  function setGauge(v) {
+    target = v;
+    $("rpm").textContent = Math.round(v).toLocaleString("tr-TR");
+    if (reduced) { shown = v; drawGauge(); return; }
+    if (!raf) raf = requestAnimationFrame(step);
+  }
+  function step() {
+    shown += (target - shown) * 0.18;
+    if (Math.abs(target - shown) < 2) shown = target;
+    drawGauge();
+    raf = shown === target ? 0 : requestAnimationFrame(step);
+  }
+
+  // ---------- Zaman grafiği ----------
+  const cc = $("chart"), c = cc.getContext("2d");
+  function drawChart() {
+    const [W, H] = sizeCanvas(cc, 220);
+    const L = 46, Rp = 8, T = 10, B = 26, pw = W - L - Rp, ph = H - T - B;
+    const fg = css("--fg"), muted = css("--muted"), line = css("--line"), acc = css("--accent"), red = css("--red");
+    c.clearRect(0, 0, W, H);
+    const good = results.filter(r => r.conf >= GOOD);
+    const top = Math.max(1000, Math.ceil(Math.max(0, ...good.map(r => r.rpm)) * 1.15 / 1000) * 1000);
+    const ystep = top > 4000 ? 1000 : 500;
+    const tmax = Math.max(1, results.length ? results[results.length - 1].t + 0.25 : 1);
+    const tmin = results.length && live ? Math.max(0, tmax - 30) : 0;
+    const X = t => L + (t - tmin) / (tmax - tmin) * pw, Y = v => T + ph - v / top * ph;
+    c.font = `12px ${css("--body")}`; c.fillStyle = muted; c.textAlign = "right"; c.textBaseline = "middle";
+    c.strokeStyle = line; c.lineWidth = 1;
+    for (let v = 0; v <= top; v += ystep) {
+      c.beginPath(); c.moveTo(L, Y(v)); c.lineTo(W - Rp, Y(v)); c.stroke();
+      c.fillText(v.toLocaleString("tr-TR"), L - 6, Y(v));
+    }
+    const span = tmax - tmin, xs = [1, 2, 5, 10, 15, 30, 60].find(s => span / s <= 7) || 120;
+    c.textAlign = "center"; c.textBaseline = "top";
+    for (let t = Math.ceil(tmin / xs) * xs; t <= tmax; t += xs) c.fillText(t + " s", X(t), H - B + 6);
+    if (!results.length) {
+      c.fillStyle = muted; c.textBaseline = "middle";
+      c.fillText("Henüz ölçüm yok", L + pw / 2, T + ph / 2);
+      return;
+    }
+    const vis = results.filter(r => r.t >= tmin);
+    c.strokeStyle = acc; c.lineWidth = 2; c.lineJoin = "round";
+    c.beginPath(); let pen = false;
+    for (const r of vis) {
+      if (r.conf < GOOD) { pen = false; continue; }
+      pen ? c.lineTo(X(r.t), Y(r.rpm)) : c.moveTo(X(r.t), Y(r.rpm));
+      pen = true;
+    }
+    c.stroke();
+    for (const r of vis) {
+      c.fillStyle = r.conf >= GOOD ? acc : red;
+      c.beginPath(); c.arc(X(r.t), Y(Math.min(r.rpm, top)), r.conf >= GOOD ? 2 : 2.5, 0, 2 * Math.PI); c.fill();
+    }
+    const last = [...vis].reverse().find(r => r.conf >= GOOD);
+    if (last) { c.fillStyle = fg; c.beginPath(); c.arc(X(last.t), Y(last.rpm), 4, 0, 2 * Math.PI); c.fill(); }
+  }
+  function summarize() {
+    const d = results.filter(r => r.conf >= GOOD).map(r => r.rpm).sort((a, b) => a - b);
+    const f = v => v == null ? "–" : Math.round(v).toLocaleString("tr-TR");
+    $("s-med").textContent = f(d.length ? d[d.length >> 1] : null);
+    $("s-min").textContent = f(d.length ? d[0] : null);
+    $("s-max").textContent = f(d.length ? d[d.length - 1] : null);
+    return d;
+  }
+
+  // ---------- Arayüz ----------
+  const status = (msg, err) => { $("status").textContent = msg; $("status").className = err ? "err" : ""; };
+  const setMode = (txt, cls) => { $("mode").textContent = txt; $("mode").className = "pill " + (cls || ""); };
+  function renderCyl() {
+    $("cyl").innerHTML = "";
+    for (const n of [2, 3, 4, 5, 6, 8]) {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = n; b.setAttribute("aria-pressed", n === cyl);
+      b.setAttribute("aria-label", n + " silindir");
+      b.onclick = () => {
+        cyl = n; try { localStorage.setItem("silindir", n); } catch (e) {}
+        renderCyl();
+        if (lastSignal && !live) runAnalysis();
+      };
+      $("cyl").appendChild(b);
+    }
+  }
+  async function runAnalysis() {
+    status("Analiz ediliyor…");
+    await tick();
+    results = await analyzeSignal(lastSignal);
+    const d = summarize();
+    drawChart();
+    $("source").textContent = lastSource;
+    if (d.length) {
+      setGauge(d[d.length >> 1]);
+      status(`${results.length} pencerenin ${d.length} tanesi güvenilir. Kadran medyan devri gösteriyor.`);
+    } else {
+      setGauge(0);
+      status("Güvenilir ölçüm çıkmadı. Telefonu motora veya egzoza yaklaştırıp rüzgârsız bir ortamda yeniden kaydedin.", true);
+    }
+  }
+  async function handleFile(file) {
+    if (!file) return;
+    if (live) stopLive();
+    status("Ses çözülüyor…");
+    try {
+      const buf = await file.arrayBuffer();
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      let ab;
+      try { ab = await ctx.decodeAudioData(buf); } finally { ctx.close && ctx.close(); }
+      const n = Math.min(ab.length, Math.round(ab.sampleRate * 180)), mono = new Float32Array(n);
+      for (let ch = 0; ch < ab.numberOfChannels; ch++) {
+        const d = ab.getChannelData(ch);
+        for (let i = 0; i < n; i++) mono[i] += d[i] / ab.numberOfChannels;
+      }
+      lastSignal = resample(mono, ab.sampleRate);
+      if (lastSignal.length < WIN) { status("Kayıt çok kısa. En az 2–3 saniye kaydedin.", true); return; }
+      lastSource = file.name || "kayıt";
+      setMode("Kayıt", "file");
+      await runAnalysis();
+    } catch (e) {
+      status("Bu dosyanın sesi okunamadı. iPhone'daki Ses Kayıtları uygulamasıyla .m4a kaydedip onu seçmeyi deneyin.", true);
+    }
+  }
+  $("video-in").onchange = e => { handleFile(e.target.files[0]); e.target.value = ""; };
+  $("file-in").onchange = e => { handleFile(e.target.files[0]); e.target.value = ""; };
+
+  // ---------- Canlı mod ----------
+  async function startLive() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      status("Bu görünümde canlı mikrofon kullanılamıyor. Bunun yerine 'Video çek ve ölç' ile birkaç saniyelik kayıt yapın.", true);
+      return;
+    }
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    } catch (e) {
+      status("Mikrofon izni alınamadı. Bu sayfa canlı mikrofona izin vermeyen bir görünümde açılmış olabilir. 'Video çek ve ölç' her yerde çalışır.", true);
+      return;
+    }
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === "suspended") await ctx.resume();
+    const an = ctx.createAnalyser(); an.fftSize = 32768;
+    ctx.createMediaStreamSource(stream).connect(an);
+    const buf = new Float32Array(an.fftSize), need = Math.ceil(ctx.sampleRate * 0.5) + 16, t0 = performance.now();
+    let lock = null;
+    try { lock = await navigator.wakeLock.request("screen"); } catch (e) {}
+    results = []; lastSignal = null; lastSource = "son 30 saniye";
+    $("source").textContent = lastSource;
+    const timer = setInterval(() => {
+      an.getFloatTimeDomainData(buf);
+      const seg = resample(buf.subarray(buf.length - need), ctx.sampleRate);
+      const s = seg.length > WIN ? seg.subarray(seg.length - WIN) : seg;
+      let rms = 0; for (let i = 0; i < s.length; i++) rms += s[i] * s[i];
+      rms = Math.sqrt(rms / s.length);
+      $("levelbar").style.width = Math.min(100, rms * 400) + "%";
+      const r = analyze(s);
+      results.push({ t: (performance.now() - t0) / 1000, ...r });
+      while (results.length && results[0].t < results[results.length - 1].t - 30) results.shift();
+      if (r.conf >= GOOD) setGauge(r.rpm);
+      summarize(); drawChart();
+    }, 200);
+    live = { stream, ctx, timer, lock };
+    setMode("Canlı", "live");
+    $("live-btn").textContent = "Durdur"; $("live-btn").classList.add("stop");
+    status("Dinleniyor. Telefonu motora yaklaştırın.");
+  }
+  function stopLive() {
+    if (!live) return;
+    clearInterval(live.timer);
+    live.stream.getTracks().forEach(t => t.stop());
+    live.ctx.close();
+    if (live.lock) live.lock.release().catch(() => {});
+    live = null;
+    $("levelbar").style.width = "0";
+    $("live-btn").textContent = "Canlı dinle"; $("live-btn").classList.remove("stop");
+    setMode("Durdu");
+    status("Canlı dinleme durdu.");
+  }
+  $("live-btn").onclick = () => live ? stopLive() : startLive();
+
+  // ---------- Açılış: örnek veri ----------
+  // Sentetik 4 silindirli motor sesi: 2 s rölanti (800), 3 s gaz, 2 s 3500 RPM. Yanıltıcı yarım/1. mertebe ve gürültü içerir.
+  function demoSignal() {
+    const n = 7 * FS, s = new Float32Array(n);
+    let ph = 0;
+    const gauss = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
+    for (let i = 0; i < n; i++) {
+      const t = i / FS, rpm = t < 2 ? 800 : t < 5 ? 800 + (t - 2) / 3 * 2700 : 3500;
+      ph += 2 * Math.PI * rpm / 60 / FS;
+      s[i] = 0.5 * Math.sin(0.5 * ph) + 0.6 * Math.sin(ph) + Math.sin(2 * ph) + 0.6 * Math.sin(4 * ph) + 0.4 * Math.sin(6 * ph) + 0.8 * gauss();
+    }
+    return s;
+  }
+  renderCyl();
+  drawGauge(); drawChart();
+  (async () => {
+    lastSignal = demoSignal();
+    lastSource = "örnek: 4 silindir, 800 → 3500 RPM";
+    await runAnalysis();
+    status("Örnek veri gösteriliyor. Kendi ölçümünüz için video çekin veya kayıt dosyası seçin.");
+  })();
+  let rt = 0;
+  addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { drawGauge(); drawChart(); }, 100); });
+  if (document.fonts) document.fonts.ready.then(() => { drawGauge(); drawChart(); });
+})();
+</script>
+
+</body>
+</html>
