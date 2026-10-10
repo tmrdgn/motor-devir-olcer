@@ -1,0 +1,6 @@
+{
+  "appId": "io.github.tmrdgn.motordevir",
+  "appName": "Devir Ölçer",
+  "webDir": "www",
+  "ios": { "contentInset": "never" }
+}
