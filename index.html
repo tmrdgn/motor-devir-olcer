@@ -194,8 +194,8 @@ details[open] summary { margin-bottom: 10px; }
     </div>
     <canvas class="chart" id="chart"></canvas>
     <div class="legend">
-      <span><i style="background:var(--accent)"></i>Güvenilir ölçüm</span>
-      <span><i style="background:var(--red)"></i>Zayıf sinyal (özete katılmaz)</span>
+      <span><i style="background:var(--accent)"></i>Motor sesine kilitli</span>
+      <span><i style="background:var(--red)"></i>Motor sesi algılanmadı (——)</span>
     </div>
     <h2 style="margin-top:8px">Ses seviyesi (dBA, Fast)</h2>
     <canvas class="chart" id="chart-db"></canvas>
@@ -254,7 +254,7 @@ details[open] summary { margin-bottom: 10px; }
     <ul class="tips">
       <li>4 zamanlı motorlar içindir. Silindir sayısını doğru seçin; yanlışsa sonuç orantılı olarak kayar.</li>
       <li>Telefonu motor bölmesine veya egzoz çıkışına 30–50 cm mesafede tutun. Kayış ve fana yaklaşmayın.</li>
-      <li>Rüzgâr, radyo, konuşma ve klima fanı ölçümü bozar. Sabit devirde ölçüm en güvenilir olanıdır.</li>
+      <li>Ses motor sesi özelliği taşımıyorsa (rüzgâr, konuşma, fan) ya da devir kararsızsa kadran <b>——</b> gösterir. Çok hızlı gaz açıp kapatırken de kısa süre —— görünebilir. Devir yaklaşık 1,5 saniye kararlı kaldığında yeniden görünür.</li>
       <li>Sonucu gösterge panelindeki takometreyle karşılaştırın. Tam iki katı ya da yarısı çıkıyorsa silindir sayısını kontrol edin.</li>
       <li>dBA değeri bilgi amaçlıdır ve IEC 61672 sınıf 1/2 ses seviyesi ölçerin yerini tutmaz. Telefon mikrofonu yaklaşık 115 dB üzerinde doyabilir. dBA yalnızca canlı dinlemede ölçülür; video kayıtlarında iPhone sesi otomatik ayarladığı için kullanılmaz.</li>
       <li>Ses telefonun içinde işlenir ve hiçbir yere gönderilmez.</li>
@@ -264,7 +264,10 @@ details[open] summary { margin-bottom: 10px; }
 
 <script>
 (() => {
-  const FS = 8000, WIN = 4000, HOP = 1000, MINR = 500, MAXR = 7000, HARM = 3, GOOD = 2;
+  const FS = 8000, WIN = 4000, HOP = 1000, MINR = 500, MAXR = 7000, HARM = 3;
+  // Motor sesi kilidi: spektrum 400 Hz'lik yerel ortalamaya bölünerek düzleştirilir (rüzgâr/fan eğimi yanıltmasın);
+  // son 6 tahminin en az 5'i güvenli (≥3,5) ve doğrusal eğilimin ±%4'ü içindeyse devir gösterilir, yoksa "——".
+  const WHITEN_HZ = 400, CONF_MIN = 3.5, LOCK_N = 6, LOCK_K = 5, LOCK_TOL = 0.04;
   const GMAX = 8000, REDLINE = 6500;
   const DB_MIN = 30, DB_MAX = 120, ESIK = 85, DEF_OFSET = 115;
   const $ = id => document.getElementById(id);
@@ -319,7 +322,10 @@ details[open] summary { margin-bottom: 10px; }
     let mean = 0; for (let i = 0; i < L; i++) mean += seg[i]; mean /= L;
     const w = hann(L), x = new Float64Array(L);
     for (let i = 0; i < L; i++) x[i] = (seg[i] - mean) * w[i];
-    const n = nextPow2(L * 4), m = fftMag(x, n), df = FS / n, k0 = cyl / 120;
+    const n = nextPow2(L * 4), raw = fftMag(x, n), df = FS / n, k0 = cyl / 120;
+    const M = raw.length, cs = new Float64Array(M + 1), m = new Float64Array(M), hw = Math.max(1, Math.floor(WHITEN_HZ / df / 2));
+    for (let i = 0; i < M; i++) cs[i + 1] = cs[i] + raw[i];
+    for (let i = 0; i < M; i++) { const lo = Math.max(0, i - hw), hi = Math.min(M, i + hw + 1); m[i] = raw[i] / ((cs[hi] - cs[lo]) / (hi - lo)); }
     const N = Math.floor((MAXR - MINR) / 2) + 1, sc = new Float64Array(N);
     let best = 0;
     for (let j = 0; j < N; j++) {
@@ -351,9 +357,24 @@ details[open] summary { margin-bottom: 10px; }
     const out = [];
     for (let s = 0; s + WIN <= sig.length; s += HOP) {
       out.push({ t: (s + WIN / 2) / FS, ...analyze(sig.subarray(s, s + WIN)) });
+      out[out.length - 1].lock = lockAt(out, out.length - 1);
       if (out.length % 30 === 0) await tick();
     }
     return out;
+  }
+  // i. tahmin için motor sesi kilidi: kilitliyse eğilim çizgisinin son değeri, değilse null
+  function lockAt(arr, i) {
+    const w = arr.slice(Math.max(0, i - LOCK_N + 1), i + 1), xs = [], ys = [];
+    w.forEach((r, j) => { if (r.conf >= CONF_MIN) { xs.push(j); ys.push(r.rpm); } });
+    if (xs.length < LOCK_K) return null;
+    const n = xs.length, mx = xs.reduce((a, b) => a + b) / n, my = ys.reduce((a, b) => a + b) / n;
+    let sxy = 0, sxx = 0;
+    for (let j = 0; j < n; j++) { sxy += (xs[j] - mx) * (ys[j] - my); sxx += (xs[j] - mx) ** 2; }
+    const a = sxx ? sxy / sxx : 0, b = my - a * mx;
+    for (let j = 0; j < n; j++) { const f = a * xs[j] + b; if (Math.abs(ys[j] - f) > LOCK_TOL * f) return null; }
+    if (Math.abs(a * (LOCK_N - 1)) > 0.5 * my) return null;
+    const v = a * (w.length - 1) + b;
+    return v >= MINR && v <= MAXR ? v : null;
   }
 
   // ---------- dBA: A ağırlık filtresi (IEC 61672) ----------
@@ -550,9 +571,11 @@ details[open] summary { margin-bottom: 10px; }
     g.fillStyle = acc; g.beginPath(); g.arc(cx, cy, 9, 0, 2 * Math.PI); g.fill();
     g.fillStyle = css("--panel"); g.beginPath(); g.arc(cx, cy, 4, 0, 2 * Math.PI); g.fill();
   }
+  // v = null: motor sesi yok, ibre sıfıra iner ve "——" yazar
   function setGauge(v) {
-    target = v;
-    $("rpm").textContent = Math.round(v).toLocaleString("tr-TR");
+    target = v == null ? 0 : v;
+    $("rpm").textContent = v == null ? "——" : (Math.round(v / 10) * 10).toLocaleString("tr-TR");
+    v = target;
     if (reduced) { shown = v; drawGauge(); return; }
     if (!raf) raf = requestAnimationFrame(step);
   }
@@ -610,10 +633,10 @@ details[open] summary { margin-bottom: 10px; }
     if (last) { ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(X(last.t), Y(Math.max(o.lo, Math.min(o.hi, o.val(last)))), 4, 0, 2 * Math.PI); ctx.fill(); }
   }
   function drawChart() {
-    const good = results.filter(r => r.conf >= GOOD);
-    const top = Math.max(1000, Math.ceil(Math.max(0, ...good.map(r => r.rpm)) * 1.15 / 1000) * 1000);
+    const good = results.filter(r => r.lock != null);
+    const top = Math.max(1000, Math.ceil(Math.max(0, ...good.map(r => r.lock)) * 1.15 / 1000) * 1000);
     plot($("chart"), {
-      val: r => r.rpm, ok: r => r.conf >= GOOD, lo: 0, hi: top, step: top > 4000 ? 1000 : 500,
+      val: r => r.lock == null ? 0 : r.lock, ok: r => r.lock != null, lo: 0, hi: top, step: top > 4000 ? 1000 : 500,
       color: css("--accent"), dots: true, fmt: v => v.toLocaleString("tr-TR"), empty: "Henüz ölçüm yok"
     });
     drawDbChart();
@@ -629,7 +652,7 @@ details[open] summary { margin-bottom: 10px; }
     });
   }
   function summarize() {
-    const d = results.filter(r => r.conf >= GOOD).map(r => r.rpm).sort((a, b) => a - b);
+    const d = results.filter(r => r.lock != null).map(r => r.lock).sort((a, b) => a - b);
     const f = v => v == null ? "–" : Math.round(v).toLocaleString("tr-TR");
     $("s-med").textContent = f(d.length ? d[d.length >> 1] : null);
     $("s-min").textContent = f(d.length ? d[0] : null);
@@ -663,10 +686,10 @@ details[open] summary { margin-bottom: 10px; }
     $("source").textContent = lastSource;
     if (d.length) {
       setGauge(d[d.length >> 1]);
-      status(`${results.length} pencerenin ${d.length} tanesi güvenilir. Kadran medyan devri gösteriyor.`);
+      status(`Kaydın %${Math.round(d.length / results.length * 100)}'inde motor sesi algılandı. Kadran bu bölümün medyan devrini gösteriyor.`);
     } else {
-      setGauge(0);
-      status("Güvenilir ölçüm çıkmadı. Telefonu motora veya egzoza yaklaştırıp rüzgârsız bir ortamda yeniden kaydedin.", true);
+      setGauge(null);
+      status("Kayıtta motor sesi algılanmadı. Telefonu motora veya egzoza yaklaştırıp rüzgârsız bir ortamda yeniden kaydedin.", true);
     }
   }
   async function handleFile(file) {
@@ -746,14 +769,21 @@ details[open] summary { margin-bottom: 10px; }
       const r = analyze(s);
       results.push({ t: (performance.now() - t0) / 1000, ...r, db: dbState && dbState.f != null ? rawDb(dbState.f) : null });
       while (results.length && results[0].t < results[results.length - 1].t - 30) results.shift();
-      if (r.conf >= GOOD) setGauge(r.rpm);
+      const son = results[results.length - 1];
+      son.lock = lockAt(results, results.length - 1);
+      setGauge(son.lock);
+      const kilitli = son.lock != null;
+      if (kilitli !== live.kilitli) {
+        live.kilitli = kilitli;
+        status(kilitli ? "Motor sesine kilitlendi." : "Motor sesi aranıyor… Telefonu motora veya egzoza yaklaştırın.");
+      }
       summarize(); drawChart();
     }, 200);
-    live = { stream, ctx, timer, lock };
+    live = { stream, ctx, timer, lock, kilitli: null };
     setMode("Canlı", "live");
     $("live-btn").textContent = "Durdur"; $("live-btn").classList.remove("primary"); $("live-btn").classList.add("stop");
     renderKal();
-    status("Dinleniyor. Telefonu motora yaklaştırın.");
+    setGauge(null);
   }
   function stopLive() {
     if (!live) return;
