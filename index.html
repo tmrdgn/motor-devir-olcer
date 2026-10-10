@@ -18,7 +18,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
-/* Gösterge paneli: tek koyu tema (kasıtlı), ortada kadran, altında kontrol ve zaman grafiği */
+/* Gösterge paneli: tek koyu tema (kasıtlı); üstte devir kadranı + dBA paneli, altında kontrol, grafikler, kalibrasyon */
 :root {
   --bg: #0e1113;
   --panel: #161b1e;
@@ -28,6 +28,7 @@
   --accent: #f0a43a;
   --red: #e5534b;
   --ok: #5bbf86;
+  --sky: #6cb6e0;
   --display: "Saira Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
   --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: dark;
@@ -42,6 +43,8 @@ h2 { font-family: var(--display); font-weight: 600; font-size: 18px; letter-spac
 .pill { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
 .pill.live { border-color: var(--red); color: var(--red); }
 .pill.file { border-color: var(--accent); color: var(--accent); }
+.pill.ok { border-color: var(--ok); color: var(--ok); }
+.pill.warn { border-color: var(--accent); color: var(--accent); }
 
 .gauge { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 12px; }
 #gauge { display: block; width: 100%; max-width: 100%; aspect-ratio: 1 / .82; }
@@ -50,6 +53,26 @@ h2 { font-family: var(--display); font-weight: 600; font-size: 18px; letter-spac
 .unit { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
 #level { position: absolute; left: 24px; right: 24px; bottom: 12px; height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; }
 #levelbar { height: 100%; width: 0; background: var(--ok); transition: width .15s; }
+
+.dba { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.dba-top { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.dba-main { display: flex; align-items: baseline; gap: 8px; }
+#dba { font-family: var(--display); font-weight: 600; font-size: clamp(44px, 13vw, 64px); line-height: 1; font-variant-numeric: tabular-nums; color: var(--sky); }
+.dba-unit { font-family: var(--display); font-size: 22px; font-weight: 600; color: var(--muted); }
+.dba-side { display: flex; gap: 18px; }
+.mini { display: flex; flex-direction: column; align-items: flex-end; }
+.mini b { font-family: var(--display); font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.mini span { font-size: 11px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+.meter { position: relative; height: 12px; border-radius: 6px; background: var(--line); }
+#meterbar { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 6px; background: var(--ok); }
+.meter .mark { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--fg); }
+.scale { position: relative; height: 16px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.scale span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.dba-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.small-seg { display: flex; gap: 6px; }
+.small-seg button, .link-btn { font: 500 13px var(--body); padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer; }
+.small-seg button[aria-pressed="true"] { background: var(--sky); border-color: var(--sky); color: var(--bg); }
+#clip { color: var(--red); font-weight: 600; font-size: 13px; }
 
 .controls { display: flex; flex-direction: column; gap: 14px; }
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
@@ -61,7 +84,9 @@ h2 { font-family: var(--display); font-weight: 600; font-size: 18px; letter-spac
 .btn { font: 600 15px var(--body); display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; padding: 10px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; text-align: center; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
 .btn.stop { background: var(--red); border-color: var(--red); color: var(--fg); }
-.btn:focus-visible, .seg button:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+.btn.sky { background: var(--sky); border-color: var(--sky); color: var(--bg); }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn:focus-visible, .seg button:focus-visible, .small-seg button:focus-visible, .link-btn:focus-visible, input:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
 input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 #status { min-height: 1.5em; color: var(--muted); font-size: 14px; }
 #status.err { color: var(--red); }
@@ -71,9 +96,23 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
 .stat { display: flex; flex-direction: column; }
 .stat b { font-family: var(--display); font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .stat span { font-size: 12px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
-#chart { display: block; width: 100%; height: 220px; }
+canvas.chart { display: block; width: 100%; height: 200px; }
 .legend { display: flex; gap: 16px; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.sub { font-size: 13px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; margin-top: 4px; }
+
+.steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; max-width: 65ch; }
+.steps li::marker { color: var(--sky); font-family: var(--display); font-weight: 600; }
+.cal-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field label { font-size: 12px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+.field input { font: 600 20px var(--display); font-variant-numeric: tabular-nums; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); width: 100%; }
+.readonly { font: 600 20px var(--display); font-variant-numeric: tabular-nums; padding: 10px 12px; border-radius: 12px; border: 1px dashed var(--line); color: var(--sky); min-height: 48px; }
+#cal-msg { min-height: 1.5em; font-size: 14px; color: var(--muted); }
+#cal-msg.err { color: var(--red); }
+#cal-msg.ok { color: var(--ok); }
+details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+details[open] summary { margin-bottom: 10px; }
 
 .tips { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--fg); max-width: 65ch; }
 .tips li::marker { color: var(--accent); }
@@ -96,15 +135,47 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
     <div id="level" aria-hidden="true"><div id="levelbar"></div></div>
   </section>
 
+  <section class="dba" aria-label="Ses seviyesi">
+    <div class="dba-top">
+      <div>
+        <div class="dba-main"><span id="dba">–</span><span class="dba-unit">dBA</span></div>
+        <div class="sub" id="dba-sub">Canlı dinlemede ölçülür</div>
+      </div>
+      <div class="dba-side">
+        <div class="mini"><b id="leq">–</b><span>Leq</span></div>
+        <div class="mini"><b id="lmax">–</b><span>LMax</span></div>
+      </div>
+    </div>
+    <div>
+      <div class="meter" aria-hidden="true"><div id="meterbar"></div><div class="mark" style="left:calc((85 - 30) / 90 * 100%)"></div></div>
+      <div class="scale" aria-hidden="true">
+        <span style="left:0;transform:none">30</span>
+        <span style="left:calc(30 / 90 * 100%)">60</span>
+        <span style="left:calc(55 / 90 * 100%)">85 eşik</span>
+        <span style="left:calc(70 / 90 * 100%)">100</span>
+        <span style="right:0;left:auto;transform:none">120</span>
+      </div>
+    </div>
+    <div class="dba-foot">
+      <div class="small-seg" role="group" aria-label="Zaman ağırlığı">
+        <button type="button" id="tw-f" aria-pressed="true">Fast</button>
+        <button type="button" id="tw-s" aria-pressed="false">Slow</button>
+      </div>
+      <span id="clip" hidden>Mikrofon doydu, değer düşük çıkabilir</span>
+      <span id="cal-badge" class="pill warn">Kalibre değil</span>
+      <button type="button" class="link-btn" id="reset-eq">Leq/LMax sıfırla</button>
+    </div>
+  </section>
+
   <section class="controls">
     <div class="row">
       <span class="label" id="cyl-label">Silindir</span>
       <div class="seg" role="group" aria-labelledby="cyl-label" id="cyl"></div>
     </div>
     <div class="actions">
-      <label class="btn primary" for="video-in">Video çek ve ölç</label>
+      <button class="btn primary" id="live-btn" type="button">Canlı dinle</button>
+      <label class="btn" for="video-in">Video çek ve ölç</label>
       <label class="btn" for="file-in">Kayıt dosyası seç</label>
-      <button class="btn" id="live-btn" type="button">Canlı dinle</button>
     </div>
     <input id="video-in" type="file" accept="video/*" capture="environment">
     <input id="file-in" type="file" accept="audio/*,video/*,.m4a,.mov,.mp4,.wav,.mp3">
@@ -121,11 +192,60 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
       <div class="stat"><b id="s-min">–</b><span>En düşük</span></div>
       <div class="stat"><b id="s-max">–</b><span>En yüksek</span></div>
     </div>
-    <canvas id="chart"></canvas>
+    <canvas class="chart" id="chart"></canvas>
     <div class="legend">
       <span><i style="background:var(--accent)"></i>Güvenilir ölçüm</span>
       <span><i style="background:var(--red)"></i>Zayıf sinyal (özete katılmaz)</span>
     </div>
+    <h2 style="margin-top:8px">Ses seviyesi (dBA, Fast)</h2>
+    <canvas class="chart" id="chart-db"></canvas>
+  </section>
+
+  <section class="card" aria-labelledby="cal-title">
+    <div class="row" style="justify-content:space-between">
+      <h2 id="cal-title">dBA kalibrasyonu</h2>
+      <span id="cal-state" class="unit"></span>
+    </div>
+    <ol class="steps">
+      <li>Telefonu referans cihazın yanına koyun: bir desibelmetre, NIOSH SLM gibi kalibre bir uygulama ya da akustik kalibratör. Mikrofonlar aynı yöne baksın.</li>
+      <li>Sabit bir ses kaynağı açın, örneğin rölantideki motor, fan ya da pembe gürültü. Kalibratör kullanıyorsanız telefonun alt mikrofonuna sıkıca tutun.</li>
+      <li><b>10 sn ölç</b>'e basın. Bu sürede referans cihazın gösterdiği dBA değerini (tercihen Leq) not edin.</li>
+      <li>Referans değeri girip <b>Kaydet</b>'e basın. Ofset bu telefonda saklanır.</li>
+    </ol>
+    <div class="cal-grid">
+      <div class="field">
+        <label for="ref-db">Referans değer (dBA)</label>
+        <input id="ref-db" type="text" inputmode="decimal" placeholder="ör. 78,5" autocomplete="off">
+        <div class="small-seg">
+          <button type="button" id="ref-94">94 dB kalibratör</button>
+          <button type="button" id="ref-114">114 dB</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Telefonun ham ölçümü</label>
+        <div class="readonly" id="cal-raw">–</div>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn sky" type="button" id="cal-start">10 sn ölç</button>
+      <button class="btn" type="button" id="cal-save" disabled>Kaydet</button>
+    </div>
+    <div id="cal-msg" role="status" aria-live="polite"></div>
+    <details>
+      <summary>Ofseti elle ayarla veya sıfırla</summary>
+      <div class="cal-grid">
+        <div class="field">
+          <label for="ofset">Ofset (dB)</label>
+          <input id="ofset" type="text" inputmode="decimal" autocomplete="off">
+        </div>
+        <div class="field" style="justify-content:flex-end">
+          <div class="actions">
+            <button class="btn" type="button" id="ofset-apply">Uygula</button>
+            <button class="btn" type="button" id="ofset-reset">Sıfırla</button>
+          </div>
+        </div>
+      </div>
+    </details>
   </section>
 
   <section class="card">
@@ -133,10 +253,11 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
     <div class="formula">ateşleme frekansı = RPM / 60 × silindir / 2</div>
     <ul class="tips">
       <li>4 zamanlı motorlar içindir. Silindir sayısını doğru seçin; yanlışsa sonuç orantılı olarak kayar.</li>
-      <li>Telefonu motor bölmesine veya egzoz çıkışına 30–50 cm mesafede tutun ve 5–10 saniye kaydedin. Kayış ve fana yaklaşmayın.</li>
+      <li>Telefonu motor bölmesine veya egzoz çıkışına 30–50 cm mesafede tutun. Kayış ve fana yaklaşmayın.</li>
       <li>Rüzgâr, radyo, konuşma ve klima fanı ölçümü bozar. Sabit devirde ölçüm en güvenilir olanıdır.</li>
       <li>Sonucu gösterge panelindeki takometreyle karşılaştırın. Tam iki katı ya da yarısı çıkıyorsa silindir sayısını kontrol edin.</li>
-      <li>Ölçüm aralığı 500–7000 RPM'dir. Ses, telefonun içinde işlenir ve hiçbir yere gönderilmez.</li>
+      <li>dBA değeri bilgi amaçlıdır ve IEC 61672 sınıf 1/2 ses seviyesi ölçerin yerini tutmaz. Telefon mikrofonu yaklaşık 115 dB üzerinde doyabilir. dBA yalnızca canlı dinlemede ölçülür; video kayıtlarında iPhone sesi otomatik ayarladığı için kullanılmaz.</li>
+      <li>Ses telefonun içinde işlenir ve hiçbir yere gönderilmez.</li>
     </ul>
   </section>
 </div>
@@ -145,15 +266,23 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
 (() => {
   const FS = 8000, WIN = 4000, HOP = 1000, MINR = 500, MAXR = 7000, HARM = 3, GOOD = 2;
   const GMAX = 8000, REDLINE = 6500;
+  const DB_MIN = 30, DB_MAX = 120, ESIK = 85, DEF_OFSET = 115;
   const $ = id => document.getElementById(id);
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const fmt1 = v => v.toLocaleString("tr-TR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const num = s => { const v = parseFloat(String(s).replace(",", ".")); return isFinite(v) ? v : null; };
+  const store = {
+    get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+    del(k) { try { localStorage.removeItem(k); } catch (e) {} }
+  };
 
-  let cyl = 4;
-  try { const s = +localStorage.getItem("silindir"); if ([2,3,4,5,6,8].includes(s)) cyl = s; } catch (e) {}
+  let cyl = [2,3,4,5,6,8].includes(store.get("silindir")) ? store.get("silindir") : 4;
+  let kal = store.get("dba_kalibrasyon");  // {ofset, tarih, yontem}
   let lastSignal = null, lastSource = "", results = [], live = null;
 
-  // ---------- Sinyal işleme ----------
+  // ---------- Devir: sinyal işleme ----------
   const nextPow2 = n => { let p = 1; while (p < n) p <<= 1; return p; };
   const hannCache = {};
   function hann(L) {
@@ -227,6 +356,157 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
     return out;
   }
 
+  // ---------- dBA: A ağırlık filtresi (IEC 61672) ----------
+  // Analog kutuplar 20.6, 107.7, 737.9, 12194 Hz; s=0'da 4 sıfır. Ön bükmeli bilineer dönüşümle
+  // üç ikinci dereceden bölüm (biquad) elde edilir, kazanç 1 kHz'de 0 dB'e normalize edilir.
+  function aWeightSOS(fs) {
+    const p = [20.598997, 107.65265, 737.86223, 12194.217].map(f => { const t = Math.tan(Math.PI * f / fs); return (1 - t) / (1 + t); });
+    const sec = (z1, z2, q1, q2) => [1, -(z1 + z2), z1 * z2, -(q1 + q2), q1 * q2];  // b0 b1 b2 a1 a2
+    const sos = [sec(1, 1, p[0], p[0]), sec(1, 1, p[1], p[2]), sec(-1, -1, p[3], p[3])];
+    const w = 2 * Math.PI * 1000 / fs, mag = (c0, c1, c2) => Math.hypot(c0 + c1 * Math.cos(w) + c2 * Math.cos(2 * w), c1 * Math.sin(w) + c2 * Math.sin(2 * w));
+    let g = 1;
+    for (const [b0, b1, b2, a1, a2] of sos) g *= mag(b0, b1, b2) / mag(1, a1, a2);
+    for (let i = 0; i < 3; i++) sos[0][i] /= g;
+    return sos;
+  }
+  // Hem AudioWorklet'te hem yedek ScriptProcessor'da çalışan filtre (DF2T, çift duyarlıklı)
+  const DSP_SRC = `class AW {
+    constructor(sos) { this.s = sos; this.z = sos.map(() => [0, 0]); }
+    run(x) {
+      let sum = 0, pk = 0; const s = this.s, z = this.z;
+      for (let i = 0; i < x.length; i++) {
+        let v = x[i]; const a = v < 0 ? -v : v; if (a > pk) pk = a;
+        for (let k = 0; k < s.length; k++) {
+          const c = s[k], st = z[k], y = c[0] * v + st[0];
+          st[0] = c[1] * v - c[3] * y + st[1]; st[1] = c[2] * v - c[4] * y; v = y;
+        }
+        sum += v * v;
+      }
+      return [sum, pk];
+    }
+  }`;
+  const WORKLET_SRC = DSP_SRC + `
+  class P extends AudioWorkletProcessor {
+    constructor(o) { super(); this.f = new AW(o.processorOptions.sos); this.acc = 0; this.n = 0; this.pk = 0; }
+    process(inp) {
+      const x = inp[0] && inp[0][0];
+      if (x) {
+        const r = this.f.run(x); this.acc += r[0]; this.n += x.length; if (r[1] > this.pk) this.pk = r[1];
+        if (this.n >= 1024) { this.port.postMessage([this.acc / this.n, this.n, this.pk]); this.acc = 0; this.n = 0; this.pk = 0; }
+      }
+      return true;
+    }
+  }
+  registerProcessor("a-agirlik", P);`;
+  const AW = new Function(DSP_SRC + "; return AW;")();
+
+  const ofset = () => kal ? kal.ofset : DEF_OFSET;
+  let dbState = null, tw = "f", cal = null, calRaw = null;
+  const rawDb = ms => 10 * Math.log10(ms + 1e-20);
+  function resetEq() { if (dbState) Object.assign(dbState, { eqSum: 0, eqN: 0, max: -Infinity, settle: 0.5 }); renderDb(); }
+  function onBlock(ms, n, pk, sr) {
+    const s = dbState, dt = n / sr;
+    const af = Math.exp(-dt / 0.125), as = Math.exp(-dt / 1.0);
+    s.f = s.f == null ? ms : s.f * af + ms * (1 - af);
+    s.s = s.s == null ? ms : s.s * as + ms * (1 - as);
+    s.eqSum += ms * n; s.eqN += n;
+    if (s.settle > 0) s.settle -= dt; else s.max = Math.max(s.max, rawDb(s.f));
+    if (pk > 0.98) s.clipUntil = performance.now() + 1500;
+    if (cal) {
+      cal.sum += ms * n; cal.n += n;
+      const kalan = Math.max(0, Math.ceil((cal.end - performance.now()) / 1000));
+      $("cal-start").textContent = `Ölçülüyor… ${kalan} sn`;
+      if (performance.now() >= cal.end) finishCal();
+    }
+    const now = performance.now();
+    if (now - (s.ui || 0) > 120) { s.ui = now; renderDb(); }
+  }
+  function renderDb() {
+    const s = dbState;
+    if (!s || s.f == null) {
+      $("dba").textContent = "–"; $("leq").textContent = "–"; $("lmax").textContent = "–";
+      $("meterbar").style.width = "0"; $("clip").hidden = true;
+      return;
+    }
+    const L = rawDb(tw === "f" ? s.f : s.s) + ofset();
+    $("dba").textContent = fmt1(L);
+    $("leq").textContent = s.eqN ? fmt1(rawDb(s.eqSum / s.eqN) + ofset()) : "–";
+    $("lmax").textContent = isFinite(s.max) ? fmt1(s.max + ofset()) : "–";
+    const frac = Math.max(0, Math.min(1, (L - DB_MIN) / (DB_MAX - DB_MIN)));
+    $("meterbar").style.width = (frac * 100) + "%";
+    $("meterbar").style.background = L >= 100 ? css("--red") : L >= ESIK ? css("--accent") : css("--ok");
+    $("clip").hidden = !(s.clipUntil > performance.now());
+  }
+  function renderKal() {
+    const b = $("cal-badge");
+    if (kal) {
+      b.textContent = "Kalibre"; b.className = "pill ok";
+      $("cal-state").textContent = `Ofset ${kal.ofset >= 0 ? "+" : ""}${fmt1(kal.ofset)} dB · ${new Date(kal.tarih).toLocaleDateString("tr-TR")}`;
+    } else {
+      b.textContent = "Kalibre değil"; b.className = "pill warn";
+      $("cal-state").textContent = `Varsayılan ofset +${fmt1(DEF_OFSET)} dB, ±10 dB sapabilir`;
+    }
+    $("ofset").value = fmt1(ofset());
+    $("dba-sub").textContent = live ? (tw === "f" ? "Fast · 125 ms" : "Slow · 1 s") + (kal ? "" : " · kalibre değil") : "Canlı dinlemede ölçülür";
+  }
+  function setTw(v) {
+    tw = v;
+    $("tw-f").setAttribute("aria-pressed", v === "f");
+    $("tw-s").setAttribute("aria-pressed", v === "s");
+    renderKal(); renderDb();
+  }
+  $("tw-f").onclick = () => setTw("f");
+  $("tw-s").onclick = () => setTw("s");
+  $("reset-eq").onclick = resetEq;
+
+  // ---------- Kalibrasyon ----------
+  const calMsg = (t, cls) => { $("cal-msg").textContent = t; $("cal-msg").className = cls || ""; };
+  function updateSave() { $("cal-save").disabled = !(calRaw != null && num($("ref-db").value) != null); }
+  $("ref-db").oninput = updateSave;
+  $("ref-94").onclick = () => { $("ref-db").value = "94,0"; updateSave(); };
+  $("ref-114").onclick = () => { $("ref-db").value = "114,0"; updateSave(); };
+  $("cal-start").onclick = async () => {
+    if (cal) return;
+    if (!live) { await startLive(); if (!live) { calMsg("Kalibrasyon için mikrofon gerekiyor. Mikrofon izni verip yeniden deneyin.", "err"); return; } }
+    calRaw = null; $("cal-raw").textContent = "–"; updateSave();
+    cal = { sum: 0, n: 0, end: performance.now() + 10000 };
+    $("cal-start").disabled = true;
+    calMsg("Ölçülüyor. Telefonu ve ses kaynağını sabit tutun.");
+  };
+  function finishCal() {
+    const c = cal; cal = null;
+    $("cal-start").disabled = false; $("cal-start").textContent = "10 sn ölç";
+    if (!c || !c.n) { calMsg("Ölçüm alınamadı.", "err"); return; }
+    calRaw = rawDb(c.sum / c.n);
+    $("cal-raw").textContent = `${fmt1(calRaw)} dBFS(A)`;
+    if (dbState && dbState.clipUntil > performance.now()) calMsg("Mikrofon doydu. Ses kaynağını kısın veya telefonu uzaklaştırıp yeniden ölçün.", "err");
+    else calMsg("Ölçüm tamam. Referans değeri girip Kaydet'e basın.");
+    updateSave();
+  }
+  function saveKal(of, yontem) {
+    kal = { ofset: Math.round(of * 10) / 10, tarih: Date.now(), yontem };
+    store.set("dba_kalibrasyon", kal);
+    renderKal(); renderDb(); drawDbChart();
+  }
+  $("cal-save").onclick = () => {
+    const ref = num($("ref-db").value);
+    if (ref == null || calRaw == null) return;
+    if (ref < 30 || ref > 140) { calMsg("Referans değer 30–140 dB arasında olmalı.", "err"); return; }
+    saveKal(ref - calRaw, "referans");
+    calMsg(`Kaydedildi. Ofset ${fmt1(kal.ofset)} dB.`, "ok");
+  };
+  $("ofset-apply").onclick = () => {
+    const v = num($("ofset").value);
+    if (v == null || v < 50 || v > 180) { calMsg("Ofset 50–180 dB arasında bir sayı olmalı.", "err"); return; }
+    saveKal(v, "elle");
+    calMsg(`Ofset ${fmt1(kal.ofset)} dB olarak ayarlandı.`, "ok");
+  };
+  $("ofset-reset").onclick = () => {
+    kal = null; store.del("dba_kalibrasyon");
+    renderKal(); renderDb(); drawDbChart();
+    calMsg("Kalibrasyon silindi, varsayılan ofset kullanılıyor.");
+  };
+
   // ---------- Kadran ----------
   const gc = $("gauge"), g = gc.getContext("2d");
   let shown = 0, target = 0, raf = 0;
@@ -283,48 +563,70 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
     raf = shown === target ? 0 : requestAnimationFrame(step);
   }
 
-  // ---------- Zaman grafiği ----------
-  const cc = $("chart"), c = cc.getContext("2d");
-  function drawChart() {
-    const [W, H] = sizeCanvas(cc, 220);
+  // ---------- Zaman grafikleri ----------
+  // o: { val(r), ok(r), lo, hi, step, color, fmt, ref?, empty }
+  function plot(canvas, o) {
+    const ctx = canvas.getContext("2d");
+    const [W, H] = sizeCanvas(canvas, 200);
     const L = 46, Rp = 8, T = 10, B = 26, pw = W - L - Rp, ph = H - T - B;
-    const fg = css("--fg"), muted = css("--muted"), line = css("--line"), acc = css("--accent"), red = css("--red");
-    c.clearRect(0, 0, W, H);
-    const good = results.filter(r => r.conf >= GOOD);
-    const top = Math.max(1000, Math.ceil(Math.max(0, ...good.map(r => r.rpm)) * 1.15 / 1000) * 1000);
-    const ystep = top > 4000 ? 1000 : 500;
+    const muted = css("--muted"), line = css("--line"), red = css("--red"), fg = css("--fg");
+    ctx.clearRect(0, 0, W, H);
     const tmax = Math.max(1, results.length ? results[results.length - 1].t + 0.25 : 1);
     const tmin = results.length && live ? Math.max(0, tmax - 30) : 0;
-    const X = t => L + (t - tmin) / (tmax - tmin) * pw, Y = v => T + ph - v / top * ph;
-    c.font = `12px ${css("--body")}`; c.fillStyle = muted; c.textAlign = "right"; c.textBaseline = "middle";
-    c.strokeStyle = line; c.lineWidth = 1;
-    for (let v = 0; v <= top; v += ystep) {
-      c.beginPath(); c.moveTo(L, Y(v)); c.lineTo(W - Rp, Y(v)); c.stroke();
-      c.fillText(v.toLocaleString("tr-TR"), L - 6, Y(v));
+    const X = t => L + (t - tmin) / (tmax - tmin) * pw, Y = v => T + ph - (v - o.lo) / (o.hi - o.lo) * ph;
+    ctx.font = `12px ${css("--body")}`; ctx.fillStyle = muted; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    ctx.strokeStyle = line; ctx.lineWidth = 1;
+    for (let v = o.lo; v <= o.hi + 1e-9; v += o.step) {
+      ctx.beginPath(); ctx.moveTo(L, Y(v)); ctx.lineTo(W - Rp, Y(v)); ctx.stroke();
+      ctx.fillText(o.fmt(v), L - 6, Y(v));
     }
     const span = tmax - tmin, xs = [1, 2, 5, 10, 15, 30, 60].find(s => span / s <= 7) || 120;
-    c.textAlign = "center"; c.textBaseline = "top";
-    for (let t = Math.ceil(tmin / xs) * xs; t <= tmax; t += xs) c.fillText(t + " s", X(t), H - B + 6);
-    if (!results.length) {
-      c.fillStyle = muted; c.textBaseline = "middle";
-      c.fillText("Henüz ölçüm yok", L + pw / 2, T + ph / 2);
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (let t = Math.ceil(tmin / xs) * xs; t <= tmax; t += xs) ctx.fillText(t + " s", X(t), H - B + 6);
+    if (o.ref != null && o.ref > o.lo && o.ref < o.hi) {
+      ctx.save(); ctx.setLineDash([4, 4]); ctx.strokeStyle = css("--accent");
+      ctx.beginPath(); ctx.moveTo(L, Y(o.ref)); ctx.lineTo(W - Rp, Y(o.ref)); ctx.stroke(); ctx.restore();
+    }
+    const vis = results.filter(r => r.t >= tmin && o.val(r) != null);
+    if (!vis.length) {
+      ctx.fillStyle = muted; ctx.textBaseline = "middle";
+      ctx.fillText(o.empty, L + pw / 2, T + ph / 2);
       return;
     }
-    const vis = results.filter(r => r.t >= tmin);
-    c.strokeStyle = acc; c.lineWidth = 2; c.lineJoin = "round";
-    c.beginPath(); let pen = false;
+    ctx.strokeStyle = o.color; ctx.lineWidth = 2; ctx.lineJoin = "round";
+    ctx.beginPath(); let pen = false;
     for (const r of vis) {
-      if (r.conf < GOOD) { pen = false; continue; }
-      pen ? c.lineTo(X(r.t), Y(r.rpm)) : c.moveTo(X(r.t), Y(r.rpm));
+      if (!o.ok(r)) { pen = false; continue; }
+      const y = Y(Math.max(o.lo, Math.min(o.hi, o.val(r))));
+      pen ? ctx.lineTo(X(r.t), y) : ctx.moveTo(X(r.t), y);
       pen = true;
     }
-    c.stroke();
-    for (const r of vis) {
-      c.fillStyle = r.conf >= GOOD ? acc : red;
-      c.beginPath(); c.arc(X(r.t), Y(Math.min(r.rpm, top)), r.conf >= GOOD ? 2 : 2.5, 0, 2 * Math.PI); c.fill();
+    ctx.stroke();
+    if (o.dots) for (const r of vis) {
+      ctx.fillStyle = o.ok(r) ? o.color : red;
+      ctx.beginPath(); ctx.arc(X(r.t), Y(Math.max(o.lo, Math.min(o.hi, o.val(r)))), o.ok(r) ? 2 : 2.5, 0, 2 * Math.PI); ctx.fill();
     }
-    const last = [...vis].reverse().find(r => r.conf >= GOOD);
-    if (last) { c.fillStyle = fg; c.beginPath(); c.arc(X(last.t), Y(last.rpm), 4, 0, 2 * Math.PI); c.fill(); }
+    const last = [...vis].reverse().find(o.ok);
+    if (last) { ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(X(last.t), Y(Math.max(o.lo, Math.min(o.hi, o.val(last)))), 4, 0, 2 * Math.PI); ctx.fill(); }
+  }
+  function drawChart() {
+    const good = results.filter(r => r.conf >= GOOD);
+    const top = Math.max(1000, Math.ceil(Math.max(0, ...good.map(r => r.rpm)) * 1.15 / 1000) * 1000);
+    plot($("chart"), {
+      val: r => r.rpm, ok: r => r.conf >= GOOD, lo: 0, hi: top, step: top > 4000 ? 1000 : 500,
+      color: css("--accent"), dots: true, fmt: v => v.toLocaleString("tr-TR"), empty: "Henüz ölçüm yok"
+    });
+    drawDbChart();
+  }
+  function drawDbChart() {
+    const vals = results.filter(r => r.db != null).map(r => r.db + ofset());
+    const lo = vals.length ? Math.max(0, Math.floor((Math.min(...vals) - 5) / 10) * 10) : 40;
+    const hi = vals.length ? Math.max(lo + 30, Math.ceil((Math.max(...vals) + 5) / 10) * 10) : 100;
+    plot($("chart-db"), {
+      val: r => r.db == null ? null : r.db + ofset(), ok: () => true, lo, hi, step: 10,
+      color: css("--sky"), ref: ESIK, fmt: v => String(v),
+      empty: "dBA yalnızca canlı dinlemede ölçülür"
+    });
   }
   function summarize() {
     const d = results.filter(r => r.conf >= GOOD).map(r => r.rpm).sort((a, b) => a - b);
@@ -345,7 +647,7 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
       b.type = "button"; b.textContent = n; b.setAttribute("aria-pressed", n === cyl);
       b.setAttribute("aria-label", n + " silindir");
       b.onclick = () => {
-        cyl = n; try { localStorage.setItem("silindir", n); } catch (e) {}
+        cyl = n; store.set("silindir", n);
         renderCyl();
         if (lastSignal && !live) runAnalysis();
       };
@@ -393,7 +695,24 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
   $("video-in").onchange = e => { handleFile(e.target.files[0]); e.target.value = ""; };
   $("file-in").onchange = e => { handleFile(e.target.files[0]); e.target.value = ""; };
 
-  // ---------- Canlı mod ----------
+  // ---------- Canlı mod: devir + dBA ----------
+  async function startDb(ctx, src) {
+    const sos = aWeightSOS(ctx.sampleRate), sr = ctx.sampleRate;
+    dbState = { f: null, s: null, eqSum: 0, eqN: 0, max: -Infinity, settle: 0.5, clipUntil: 0, ui: 0 };
+    let node;
+    try {
+      const url = URL.createObjectURL(new Blob([WORKLET_SRC], { type: "application/javascript" }));
+      await ctx.audioWorklet.addModule(url);
+      node = new AudioWorkletNode(ctx, "a-agirlik", { processorOptions: { sos }, numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+      node.port.onmessage = e => onBlock(e.data[0], e.data[1], e.data[2], sr);
+    } catch (e) {
+      node = ctx.createScriptProcessor(1024, 1, 1);
+      const f = new AW(sos);
+      node.onaudioprocess = ev => { const x = ev.inputBuffer.getChannelData(0), r = f.run(x); onBlock(r[0] / x.length, x.length, r[1], sr); };
+    }
+    const mute = ctx.createGain(); mute.gain.value = 0;
+    src.connect(node); node.connect(mute); mute.connect(ctx.destination);
+  }
   async function startLive() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       status("Bu görünümde canlı mikrofon kullanılamıyor. Bunun yerine 'Video çek ve ölç' ile birkaç saniyelik kayıt yapın.", true);
@@ -408,8 +727,10 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
     }
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     if (ctx.state === "suspended") await ctx.resume();
+    const src = ctx.createMediaStreamSource(stream);
     const an = ctx.createAnalyser(); an.fftSize = 32768;
-    ctx.createMediaStreamSource(stream).connect(an);
+    src.connect(an);
+    await startDb(ctx, src);
     const buf = new Float32Array(an.fftSize), need = Math.ceil(ctx.sampleRate * 0.5) + 16, t0 = performance.now();
     let lock = null;
     try { lock = await navigator.wakeLock.request("screen"); } catch (e) {}
@@ -423,27 +744,30 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
       rms = Math.sqrt(rms / s.length);
       $("levelbar").style.width = Math.min(100, rms * 400) + "%";
       const r = analyze(s);
-      results.push({ t: (performance.now() - t0) / 1000, ...r });
+      results.push({ t: (performance.now() - t0) / 1000, ...r, db: dbState && dbState.f != null ? rawDb(dbState.f) : null });
       while (results.length && results[0].t < results[results.length - 1].t - 30) results.shift();
       if (r.conf >= GOOD) setGauge(r.rpm);
       summarize(); drawChart();
     }, 200);
     live = { stream, ctx, timer, lock };
     setMode("Canlı", "live");
-    $("live-btn").textContent = "Durdur"; $("live-btn").classList.add("stop");
+    $("live-btn").textContent = "Durdur"; $("live-btn").classList.remove("primary"); $("live-btn").classList.add("stop");
+    renderKal();
     status("Dinleniyor. Telefonu motora yaklaştırın.");
   }
   function stopLive() {
     if (!live) return;
+    if (cal) { cal = null; $("cal-start").disabled = false; $("cal-start").textContent = "10 sn ölç"; calMsg("Kalibrasyon ölçümü yarıda kaldı.", "err"); }
     clearInterval(live.timer);
     live.stream.getTracks().forEach(t => t.stop());
     live.ctx.close();
     if (live.lock) live.lock.release().catch(() => {});
     live = null;
     $("levelbar").style.width = "0";
-    $("live-btn").textContent = "Canlı dinle"; $("live-btn").classList.remove("stop");
+    $("live-btn").textContent = "Canlı dinle"; $("live-btn").classList.remove("stop"); $("live-btn").classList.add("primary");
     setMode("Durdu");
-    status("Canlı dinleme durdu.");
+    renderKal();
+    status("Canlı dinleme durdu. Son değerler ekranda kaldı.");
   }
   $("live-btn").onclick = () => live ? stopLive() : startLive();
 
@@ -460,13 +784,13 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; poin
     }
     return s;
   }
-  renderCyl();
+  renderCyl(); renderKal(); renderDb();
   drawGauge(); drawChart();
   (async () => {
     lastSignal = demoSignal();
     lastSource = "örnek: 4 silindir, 800 → 3500 RPM";
     await runAnalysis();
-    status("Örnek veri gösteriliyor. Kendi ölçümünüz için video çekin veya kayıt dosyası seçin.");
+    status("Örnek veri gösteriliyor. Canlı dinle'ye basarak devir ve dBA'yı birlikte ölçün.");
   })();
   let rt = 0;
   addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { drawGauge(); drawChart(); }, 100); });
