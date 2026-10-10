@@ -2,11 +2,9 @@
 # Telefona kurulum: Sideloadly ile Apple ID üzerinden imzalanır.
 name: iOS derleme
 
+# Şimdilik yalnızca elle çalıştırılır (Actions sekmesi → Run workflow).
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: [index.html, ios-app/**, .github/workflows/ios.yml]
 
 jobs:
   ipa:
