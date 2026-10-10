@@ -182,6 +182,7 @@ details[open] summary { margin-bottom: 10px; }
       <button class="btn primary" id="live-btn" type="button">Canlı dinle</button>
       <label class="btn" for="video-in">Video çek ve ölç</label>
       <label class="btn" for="file-in">Kayıt dosyası seç</label>
+      <button class="btn" id="demo-btn" type="button">Örnek videoyu analiz et</button>
     </div>
     <input id="video-in" type="file" accept="video/*" capture="environment">
     <input id="file-in" type="file" accept="audio/*,video/*,.m4a,.mov,.mp4,.wav,.mp3">
@@ -289,6 +290,7 @@ details[open] summary { margin-bottom: 10px; }
       <li>Ses motor sesi özelliği taşımıyorsa (rüzgâr, konuşma, fan) ya da devir kararsızsa kadran <b>——</b> gösterir. Çok hızlı gaz açıp kapatırken de kısa süre —— görünebilir. Devir yaklaşık 1,5 saniye kararlı kaldığında yeniden görünür.</li>
       <li>Sonucu gösterge panelindeki takometreyle karşılaştırın. Tam iki katı ya da yarısı çıkıyorsa silindir sayısını kontrol edin.</li>
       <li>dBA değeri bilgi amaçlıdır ve IEC 61672 sınıf 1/2 ses seviyesi ölçerin yerini tutmaz. Telefon mikrofonu yaklaşık 115 dB üzerinde doyabilir. dBA yalnızca canlı dinlemede ölçülür; video kayıtlarında iPhone sesi otomatik ayarladığı için kullanılmaz.</li>
+      <li>Denemek için <b>Örnek videoyu analiz et</b>'e basın: 12 saniyelik video 800 RPM rölantiden 3000 RPM'e çıkar. Videoyu <a href="ornek-motor.mp4" target="_blank" rel="noopener" style="color:var(--sky)">buradan izleyebilir</a> ve ekrandaki gerçek devirle karşılaştırabilirsiniz.</li>
       <li>Ses telefonun içinde işlenir ve hiçbir yere gönderilmez.</li>
     </ul>
   </section>
@@ -946,6 +948,17 @@ details[open] summary { margin-bottom: 10px; }
       status("Bu dosyanın sesi okunamadı. iPhone'daki Ses Kayıtları uygulamasıyla .m4a kaydedip onu seçmeyi deneyin.", true);
     }
   }
+  // Örnek video: 12 s, 4 silindir; 800 RPM → 3000 RPM (görüntüde gerçek devir yazar)
+  $("demo-btn").onclick = async () => {
+    status("Örnek video indiriliyor…");
+    try {
+      const r = await fetch("ornek-motor.mp4");
+      if (!r.ok) throw new Error(r.status);
+      await handleFile(new File([await r.blob()], "ornek-motor.mp4", { type: "video/mp4" }));
+    } catch (e) {
+      status("Örnek video indirilemedi. İnternet bağlantınızı kontrol edip yeniden deneyin.", true);
+    }
+  };
   $("video-in").onchange = e => { handleFile(e.target.files[0]); e.target.value = ""; };
   $("file-in").onchange = e => { handleFile(e.target.files[0]); e.target.value = ""; };
 
