@@ -117,6 +117,12 @@ details[open] summary { margin-bottom: 10px; }
 .tips { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--fg); max-width: 65ch; }
 .tips li::marker { color: var(--accent); }
 .formula { font-family: var(--display); font-size: 18px; letter-spacing: .03em; color: var(--accent); }
+.fft-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+#fft { display: block; width: 100%; height: 240px; touch-action: pan-y; cursor: crosshair; }
+#fft-read { font-size: 14px; font-variant-numeric: tabular-nums; min-height: 1.5em; color: var(--fg); }
+#fft-read.hint { color: var(--muted); }
+.wf-scale { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.wf-scale i { display: inline-block; width: 120px; max-width: 40vw; height: 10px; border-radius: 5px; }
 @media (prefers-reduced-motion: reduce) { #levelbar { transition: none; } }
 </style>
 
@@ -180,6 +186,32 @@ details[open] summary { margin-bottom: 10px; }
     <input id="video-in" type="file" accept="video/*" capture="environment">
     <input id="file-in" type="file" accept="audio/*,video/*,.m4a,.mov,.mp4,.wav,.mp3">
     <div id="status" role="status" aria-live="polite"></div>
+  </section>
+
+  <section class="card" aria-labelledby="fft-title">
+    <div class="row" style="justify-content:space-between">
+      <h2 id="fft-title">Frekans spektrumu</h2>
+      <span id="fft-src" class="unit"></span>
+    </div>
+    <div class="fft-bar">
+      <div class="small-seg" role="group" aria-label="Görünüm">
+        <button type="button" id="v-spec" aria-pressed="true">Spektrum</button>
+        <button type="button" id="v-wf" aria-pressed="false">Şelale</button>
+      </div>
+      <div class="small-seg" role="group" aria-label="Frekans aralığı">
+        <button type="button" id="r-lin" aria-pressed="true">Motor 0–1 kHz</button>
+        <button type="button" id="r-log" aria-pressed="false">Tümü 20 Hz–20 kHz</button>
+      </div>
+      <div class="small-seg"><button type="button" id="hold" aria-pressed="false">Tepe tut</button></div>
+    </div>
+    <canvas id="fft" aria-label="Frekans spektrumu grafiği"></canvas>
+    <div id="fft-read" class="hint">Frekans okumak için grafiğe dokunun</div>
+    <div class="legend" id="leg-spec">
+      <span><i style="background:var(--sky)"></i>Spektrum</span>
+      <span><i style="background:var(--muted)"></i>Tepe tutma</span>
+      <span><i style="background:var(--accent)"></i>Ateşleme frekansı ve katları</span>
+    </div>
+    <div class="wf-scale" id="leg-wf" hidden><span>Zayıf</span><i id="wf-grad"></i><span>Güçlü</span></div>
   </section>
 
   <section class="card">
@@ -660,6 +692,202 @@ details[open] summary { margin-bottom: 10px; }
     return d;
   }
 
+  // ---------- Frekans spektrumu ----------
+  // Canlı: AnalyserNode (8192 nokta, Blackman); +13,6 dB düzeltme ile tam ölçek sinüs ≈ 0 dBFS.
+  // Kayıt: kendi FFT'miz (Hann), 2|X|/Σw ile aynı ölçek. Şelale son 15 s'yi (canlı) veya tüm kaydı gösterir.
+  const SPEC = { view: "spec", range: "lin", hold: false, frame: null, peak: null, binHz: 1, nyq: 4000,
+                 frames: [], frameT: [], rpm: null, cursor: null, raf: 0, lastCol: 0, lastDraw: 0 };
+  const LIVE_CORR = 20 * Math.log10(2 / 0.42), DB_LO = -100, DB_HI = 0, WF_LO = -95, WF_HI = -25, WF_MAX = 150;
+  const LUT = (() => {
+    const st = [[0, [14, 17, 19]], [.3, [52, 30, 98]], [.55, [150, 44, 110]], [.75, [229, 83, 75]], [.9, [240, 164, 58]], [1, [255, 240, 190]]];
+    const out = [];
+    for (let i = 0; i < 256; i++) {
+      const v = i / 255; let k = 0; while (k < st.length - 2 && v > st[k + 1][0]) k++;
+      const [a, ca] = st[k], [b, cb] = st[k + 1], f = (v - a) / (b - a);
+      out.push(ca.map((c, j) => Math.round(c + (cb[j] - c) * f)));
+    }
+    return out;
+  })();
+  $("wf-grad").style.background = `linear-gradient(90deg, ${[0, 64, 128, 192, 255].map(i => `rgb(${LUT[i]})`).join(",")})`;
+  const fRange = () => SPEC.range === "lin" ? [0, Math.min(1000, SPEC.nyq)] : [20, Math.min(20000, SPEC.nyq)];
+  function fToU(f) { const [a, b] = fRange(); return SPEC.range === "lin" ? (f - a) / (b - a) : Math.log(Math.max(f, a) / a) / Math.log(b / a); }
+  function uToF(u) { const [a, b] = fRange(); return SPEC.range === "lin" ? a + u * (b - a) : a * Math.pow(b / a, u); }
+  function dbAt(fr, f0, f1) {
+    const i0 = f0 / SPEC.binHz, i1 = f1 / SPEC.binHz;
+    if (i1 - i0 < 1) {
+      const c = (i0 + i1) / 2, i = Math.floor(c), q = c - i;
+      return i + 1 >= fr.length ? fr[fr.length - 1] : fr[i] * (1 - q) + fr[i + 1] * q;
+    }
+    let m = -Infinity;
+    for (let i = Math.floor(i0), e = Math.min(fr.length - 1, Math.ceil(i1)); i <= e; i++) if (fr[i] > m) m = fr[i];
+    return m;
+  }
+  const fmtHz = f => f >= 1000 ? (f / 1000).toLocaleString("tr-TR", { maximumFractionDigits: 1 }) + "k" : String(Math.round(f));
+  function fTicks() {
+    const [a, b] = fRange();
+    if (SPEC.range === "log") return [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000].filter(f => f >= a && f <= b);
+    const s = b > 600 ? 100 : 50, out = [];
+    for (let f = 0; f <= b + 1e-6; f += s) out.push(f);
+    return out;
+  }
+  function drawSpec() {
+    const cv = $("fft"), ctx = cv.getContext("2d");
+    const [W, H] = sizeCanvas(cv, 240);
+    const L = 46, Rp = 10, T = 20, B = 26, pw = W - L - Rp, ph = H - T - B;
+    const muted = css("--muted"), line = css("--line"), fg = css("--fg"), sky = css("--sky"), acc = css("--accent");
+    ctx.clearRect(0, 0, W, H);
+    ctx.font = `12px ${css("--body")}`; ctx.lineWidth = 1;
+    const wf = SPEC.view === "wf";
+    ctx.fillStyle = muted; ctx.strokeStyle = line;
+    if (!wf) {
+      ctx.textAlign = "right"; ctx.textBaseline = "middle";
+      for (let v = DB_LO; v <= DB_HI; v += 20) {
+        const y = T + (DB_HI - v) / (DB_HI - DB_LO) * ph;
+        ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(W - Rp, y); ctx.stroke(); ctx.fillText(v, L - 6, y);
+      }
+      ctx.save(); ctx.translate(10, T + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = "center"; ctx.fillText("dBFS", 0, 0); ctx.restore();
+      ctx.textAlign = "center"; ctx.textBaseline = "top";
+      for (const f of fTicks()) {
+        const x = L + fToU(f) * pw;
+        ctx.beginPath(); ctx.moveTo(x, T); ctx.lineTo(x, T + ph); ctx.stroke(); ctx.fillText(fmtHz(f), x, H - B + 6);
+      }
+    } else {
+      ctx.textAlign = "right"; ctx.textBaseline = "middle";
+      for (const f of fTicks()) { const y = T + (1 - fToU(f)) * ph; ctx.fillText(fmtHz(f), L - 6, y); }
+      ctx.textAlign = "left"; ctx.textBaseline = "bottom"; ctx.fillText("Hz", 4, T - 4);
+    }
+    const fr = SPEC.frame;
+    if (!fr && !(wf && SPEC.frames.length)) {
+      ctx.fillStyle = muted; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("Canlı dinlemede veya bir kayıt seçince görünür", L + pw / 2, T + ph / 2);
+      return;
+    }
+    if (wf) { drawWaterfall(ctx, L, T, pw, ph, H, B); return; }
+    const Y = v => T + (DB_HI - Math.max(DB_LO, Math.min(DB_HI, v))) / (DB_HI - DB_LO) * ph;
+    const curve = frame => { const ys = []; for (let x = 0; x <= pw; x++) ys.push(Y(dbAt(frame, uToF(x / pw), uToF((x + 1) / pw)))); return ys; };
+    if (SPEC.hold && SPEC.peak) {
+      const ys = curve(SPEC.peak);
+      ctx.strokeStyle = muted; ctx.lineWidth = 1; ctx.beginPath();
+      ys.forEach((y, x) => x ? ctx.lineTo(L + x, y) : ctx.moveTo(L + x, y)); ctx.stroke();
+    }
+    const ys = curve(fr);
+    ctx.beginPath(); ctx.moveTo(L, T + ph);
+    ys.forEach((y, x) => ctx.lineTo(L + x, y)); ctx.lineTo(L + pw, T + ph); ctx.closePath();
+    ctx.globalAlpha = 0.18; ctx.fillStyle = sky; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.strokeStyle = sky; ctx.lineWidth = 1.5; ctx.beginPath();
+    ys.forEach((y, x) => x ? ctx.lineTo(L + x, y) : ctx.moveTo(L + x, y)); ctx.stroke();
+    // Ateşleme frekansı ve katları
+    if (SPEC.rpm) {
+      const f1 = SPEC.rpm * cyl / 120, [a, b] = fRange();
+      ctx.save(); ctx.setLineDash([4, 4]); ctx.strokeStyle = acc; ctx.fillStyle = acc; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      let lastLabel = -1e9;
+      for (let k = 1; k <= 12 && k * f1 <= b; k++) {
+        if (k * f1 < a) continue;
+        const x = L + fToU(k * f1) * pw;
+        ctx.beginPath(); ctx.moveTo(x, T); ctx.lineTo(x, T + ph); ctx.stroke();
+        if (x - lastLabel > 24 || k === 1) { ctx.fillText(k === 1 ? `${fmt1(f1)} Hz` : k + "×", x, T - 3); lastLabel = k === 1 ? x + 30 : x; }
+      }
+      ctx.restore();
+    }
+    // İmleç
+    const rd = $("fft-read");
+    if (SPEC.cursor != null) {
+      const u = Math.max(0, Math.min(1, SPEC.cursor)), f = uToF(u), x = L + u * pw, db = dbAt(fr, f, f);
+      ctx.strokeStyle = fg; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, T); ctx.lineTo(x, T + ph); ctx.stroke();
+      ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(x, Y(db), 3.5, 0, 2 * Math.PI); ctx.fill();
+      const rpmEq = Math.round(f * 120 / cyl / 10) * 10;
+      rd.textContent = `${f < 100 ? fmt1(f) : Math.round(f).toLocaleString("tr-TR")} Hz · ${fmt1(db)} dBFS · ${cyl} silindirde ${rpmEq.toLocaleString("tr-TR")} RPM'nin ateşleme frekansı`;
+      rd.className = "";
+    } else { rd.textContent = "Frekans okumak için grafiğe dokunun"; rd.className = "hint"; }
+  }
+  const wfCanvas = document.createElement("canvas");
+  function drawWaterfall(ctx, L, T, pw, ph, H, B) {
+    const F = SPEC.frames, rows = Math.max(40, Math.min(240, Math.round(ph)));
+    if (!F.length) return;
+    wfCanvas.width = F.length; wfCanvas.height = rows;
+    const wc = wfCanvas.getContext("2d"), img = wc.createImageData(F.length, rows);
+    const lo = [], hi = [];
+    for (let r = 0; r < rows; r++) { hi.push(uToF(1 - r / rows)); lo.push(uToF(1 - (r + 1) / rows)); }
+    for (let c = 0; c < F.length; c++) for (let r = 0; r < rows; r++) {
+      const v = (dbAt(F[c], lo[r], hi[r]) - WF_LO) / (WF_HI - WF_LO);
+      const col = LUT[Math.max(0, Math.min(255, Math.round(v * 255)))], o = (r * F.length + c) * 4;
+      img.data[o] = col[0]; img.data[o + 1] = col[1]; img.data[o + 2] = col[2]; img.data[o + 3] = 255;
+    }
+    wc.putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = true; ctx.drawImage(wfCanvas, L, T, pw, ph);
+    const t0 = SPEC.frameT[0], t1 = SPEC.frameT[SPEC.frameT.length - 1], liveMode = !!live;
+    ctx.fillStyle = css("--muted"); ctx.textAlign = "center"; ctx.textBaseline = "top";
+    const span = Math.max(0.1, t1 - t0), xs = [1, 2, 5, 10, 15, 30, 60].find(s => span / s <= 6) || 120;
+    for (let k = 0; k * xs <= span + 1e-6; k++) {
+      const tt = liveMode ? t1 - k * xs : t0 + k * xs, x = L + (tt - t0) / span * pw;
+      ctx.fillText(liveMode ? (k ? `−${k * xs} s` : "şimdi") : `${Math.round(tt)} s`, Math.max(L + 14, Math.min(L + pw - 14, x)), H - B + 6);
+    }
+    $("fft-read").textContent = "Yatay eksen zaman, dikey eksen frekans. Motor harmonikleri yatay çizgiler olarak görünür, gaz verince yukarı kıvrılır.";
+    $("fft-read").className = "hint";
+  }
+  async function fileSpectra(data, sr) {
+    const N = sr > 16000 ? 8192 : 2048, w = hann(N), sw = w.reduce((a, b) => a + b), x = new Float64Array(N);
+    const hop = Math.max(Math.round(sr * 0.1), Math.ceil((data.length - N) / 600));
+    const frames = [], times = [], M = N / 2 + 1, pow = new Float64Array(M), peak = new Float32Array(M).fill(-200);
+    for (let s = 0, k = 0; s + N <= data.length; s += hop, k++) {
+      for (let i = 0; i < N; i++) x[i] = data[s + i] * w[i];
+      const m = fftMag(x, N), db = new Float32Array(M);
+      for (let i = 0; i < M; i++) { db[i] = 20 * Math.log10(2 * m[i] / sw); pow[i] += Math.pow(10, db[i] / 10); if (db[i] > peak[i]) peak[i] = db[i]; }
+      frames.push(db); times.push((s + N / 2) / sr);
+      if (k % 20 === 19) await tick();
+    }
+    const avg = new Float32Array(M);
+    for (let i = 0; i < M; i++) avg[i] = 10 * Math.log10(pow[i] / Math.max(1, frames.length) + 1e-20);
+    Object.assign(SPEC, { frame: frames.length ? avg : null, peak, binHz: sr / N, nyq: sr / 2, frames, frameT: times });
+    drawSpec();
+  }
+  function specLoop() {
+    if (!live) return;
+    const now = performance.now(), fa = live.fa, buf = live.fbuf;
+    fa.getFloatFrequencyData(buf);
+    const fr = new Float32Array(buf.length);
+    for (let i = 0; i < buf.length; i++) fr[i] = isFinite(buf[i]) ? buf[i] + LIVE_CORR : -200;
+    SPEC.frame = fr;
+    if (SPEC.hold) {
+      if (!SPEC.peak || SPEC.peak.length !== fr.length) SPEC.peak = fr.slice();
+      else for (let i = 0; i < fr.length; i++) if (fr[i] > SPEC.peak[i]) SPEC.peak[i] = fr[i];
+    }
+    if (now - SPEC.lastCol >= 100) {
+      SPEC.lastCol = now; SPEC.frames.push(fr); SPEC.frameT.push(now / 1000);
+      if (SPEC.frames.length > WF_MAX) { SPEC.frames.shift(); SPEC.frameT.shift(); }
+    }
+    if (now - SPEC.lastDraw >= 33) { SPEC.lastDraw = now; drawSpec(); }
+    SPEC.raf = requestAnimationFrame(specLoop);
+  }
+  function setSpec(k, v) {
+    SPEC[k] = v;
+    $("v-spec").setAttribute("aria-pressed", SPEC.view === "spec"); $("v-wf").setAttribute("aria-pressed", SPEC.view === "wf");
+    $("r-lin").setAttribute("aria-pressed", SPEC.range === "lin"); $("r-log").setAttribute("aria-pressed", SPEC.range === "log");
+    $("hold").setAttribute("aria-pressed", SPEC.hold);
+    $("leg-spec").hidden = SPEC.view === "wf"; $("leg-wf").hidden = SPEC.view !== "wf";
+    store.set("spektrum", { view: SPEC.view, range: SPEC.range });
+    drawSpec();
+  }
+  $("v-spec").onclick = () => setSpec("view", "spec");
+  $("v-wf").onclick = () => setSpec("view", "wf");
+  $("r-lin").onclick = () => setSpec("range", "lin");
+  $("r-log").onclick = () => setSpec("range", "log");
+  // Canlıda "Tepe tut" her açılışta sıfırdan başlar; kayıtta tüm kaydın tepe değeri gösterilir
+  $("hold").onclick = () => { if (live && !SPEC.hold) SPEC.peak = null; setSpec("hold", !SPEC.hold); };
+  const cursorAt = e => {
+    if (SPEC.view !== "spec") return;
+    const r = $("fft").getBoundingClientRect(), pw = r.width - 46 - 10;
+    SPEC.cursor = (e.clientX - r.left - 46) / pw;
+    if (!live) drawSpec();
+  };
+  $("fft").addEventListener("pointerdown", cursorAt);
+  $("fft").addEventListener("pointermove", e => { if (e.pointerType === "mouse" || e.buttons) cursorAt(e); });
+  const savedSpec = store.get("spektrum");
+  if (savedSpec) {
+    if (["spec", "wf"].includes(savedSpec.view)) SPEC.view = savedSpec.view;
+    if (["lin", "log"].includes(savedSpec.range)) SPEC.range = savedSpec.range;
+  }
+
   // ---------- Arayüz ----------
   const status = (msg, err) => { $("status").textContent = msg; $("status").className = err ? "err" : ""; };
   const setMode = (txt, cls) => { $("mode").textContent = txt; $("mode").className = "pill " + (cls || ""); };
@@ -672,7 +900,7 @@ details[open] summary { margin-bottom: 10px; }
       b.onclick = () => {
         cyl = n; store.set("silindir", n);
         renderCyl();
-        if (lastSignal && !live) runAnalysis();
+        if (lastSignal && !live) runAnalysis(); else drawSpec();
       };
       $("cyl").appendChild(b);
     }
@@ -682,7 +910,8 @@ details[open] summary { margin-bottom: 10px; }
     await tick();
     results = await analyzeSignal(lastSignal);
     const d = summarize();
-    drawChart();
+    SPEC.rpm = d.length ? d[d.length >> 1] : null;
+    drawChart(); drawSpec();
     $("source").textContent = lastSource;
     if (d.length) {
       setGauge(d[d.length >> 1]);
@@ -711,6 +940,8 @@ details[open] summary { margin-bottom: 10px; }
       lastSource = file.name || "kayıt";
       setMode("Kayıt", "file");
       await runAnalysis();
+      $("fft-src").textContent = "kaydın ortalaması";
+      await fileSpectra(mono, ab.sampleRate);
     } catch (e) {
       status("Bu dosyanın sesi okunamadı. iPhone'daki Ses Kayıtları uygulamasıyla .m4a kaydedip onu seçmeyi deneyin.", true);
     }
@@ -753,6 +984,8 @@ details[open] summary { margin-bottom: 10px; }
     const src = ctx.createMediaStreamSource(stream);
     const an = ctx.createAnalyser(); an.fftSize = 32768;
     src.connect(an);
+    const fa = ctx.createAnalyser(); fa.fftSize = 8192; fa.smoothingTimeConstant = 0.5;
+    src.connect(fa);
     await startDb(ctx, src);
     const buf = new Float32Array(an.fftSize), need = Math.ceil(ctx.sampleRate * 0.5) + 16, t0 = performance.now();
     let lock = null;
@@ -772,6 +1005,7 @@ details[open] summary { margin-bottom: 10px; }
       const son = results[results.length - 1];
       son.lock = lockAt(results, results.length - 1);
       setGauge(son.lock);
+      SPEC.rpm = son.lock;
       const kilitli = son.lock != null;
       if (kilitli !== live.kilitli) {
         live.kilitli = kilitli;
@@ -779,7 +1013,10 @@ details[open] summary { margin-bottom: 10px; }
       }
       summarize(); drawChart();
     }, 200);
-    live = { stream, ctx, timer, lock, kilitli: null };
+    live = { stream, ctx, timer, lock, kilitli: null, fa, fbuf: new Float32Array(fa.frequencyBinCount) };
+    Object.assign(SPEC, { frame: null, peak: null, frames: [], frameT: [], binHz: ctx.sampleRate / 8192, nyq: ctx.sampleRate / 2, rpm: null, lastCol: 0 });
+    $("fft-src").textContent = "canlı";
+    SPEC.raf = requestAnimationFrame(specLoop);
     setMode("Canlı", "live");
     $("live-btn").textContent = "Durdur"; $("live-btn").classList.remove("primary"); $("live-btn").classList.add("stop");
     renderKal();
@@ -789,6 +1026,7 @@ details[open] summary { margin-bottom: 10px; }
     if (!live) return;
     if (cal) { cal = null; $("cal-start").disabled = false; $("cal-start").textContent = "10 sn ölç"; calMsg("Kalibrasyon ölçümü yarıda kaldı.", "err"); }
     clearInterval(live.timer);
+    cancelAnimationFrame(SPEC.raf);
     live.stream.getTracks().forEach(t => t.stop());
     live.ctx.close();
     if (live.lock) live.lock.release().catch(() => {});
@@ -796,7 +1034,7 @@ details[open] summary { margin-bottom: 10px; }
     $("levelbar").style.width = "0";
     $("live-btn").textContent = "Canlı dinle"; $("live-btn").classList.remove("stop"); $("live-btn").classList.add("primary");
     setMode("Durdu");
-    renderKal();
+    renderKal(); drawSpec();
     status("Canlı dinleme durdu. Son değerler ekranda kaldı.");
   }
   $("live-btn").onclick = () => live ? stopLive() : startLive();
@@ -814,17 +1052,19 @@ details[open] summary { margin-bottom: 10px; }
     }
     return s;
   }
-  renderCyl(); renderKal(); renderDb();
+  renderCyl(); renderKal(); renderDb(); setSpec("view", SPEC.view);
   drawGauge(); drawChart();
   (async () => {
     lastSignal = demoSignal();
     lastSource = "örnek: 4 silindir, 800 → 3500 RPM";
     await runAnalysis();
+    $("fft-src").textContent = "örnek kaydın ortalaması";
+    await fileSpectra(lastSignal, FS);
     status("Örnek veri gösteriliyor. Canlı dinle'ye basarak devir ve dBA'yı birlikte ölçün.");
   })();
   let rt = 0;
-  addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { drawGauge(); drawChart(); }, 100); });
-  if (document.fonts) document.fonts.ready.then(() => { drawGauge(); drawChart(); });
+  addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { drawGauge(); drawChart(); drawSpec(); }, 100); });
+  if (document.fonts) document.fonts.ready.then(() => { drawGauge(); drawChart(); drawSpec(); });
 })();
 </script>
 
